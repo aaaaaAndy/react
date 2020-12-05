@@ -209,6 +209,7 @@ if (__DEV__) {
   didWarnAboutDefaultPropsOnFunctionComponent = {};
 }
 
+// 调和子节点
 export function reconcileChildren(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -811,30 +812,45 @@ function updateClassComponent(
   }
   prepareToReadContext(workInProgress, renderExpirationTime);
 
+  // instance为class类的实例
   const instance = workInProgress.stateNode;
   let shouldUpdate;
   if (instance === null) {
+    // 当该class还未实例化时
     if (current !== null) {
       // A class component without an instance only mounts if it suspended
       // inside a non-concurrent tree, in an inconsistent state. We want to
       // treat it like a new mount, even though an empty version of it already
       // committed. Disconnect the alternate pointers.
+      // alternate意味着当前更新完成
       current.alternate = null;
       workInProgress.alternate = null;
       // Since this is conceptually a new fiber, schedule a Placement effect
       workInProgress.effectTag |= Placement;
     }
     // In the initial pass we might need to construct the instance.
+    // 初始化class实例并挂载到workInProgress.stateNode，获取context，计算state
     constructClassInstance(workInProgress, Component, nextProps);
+
+    // 执行getDerivedStateFromProps
+    // 执行getSnapShotBeforeUpdates
+    // 执行componentWillMount
+    // 执行UNSAFE_componentWillMount
+    // 通过上述执行，计算新state
     mountClassInstance(
       workInProgress,
       Component,
       nextProps,
       renderExpirationTime,
     );
-    shouldUpdate = true;
+    shouldUpdate = true
   } else if (current === null) {
     // In a resume, we'll already have an instance we can reuse.
+    // current === null只会出现在第一次渲染的时候，因为会先创建workInProcess，
+    // 在渲染结束之后才会把workInProcess拷贝成current，代表着第一次渲染结束。
+    // 而后面也会出现根据current === null来判断是否需要调用componentDidMount的代码
+		// 当instance存在，current存在,说明上个更新未完成，可以复用
+    // 1. 执行mountClassInstance中的生命周期方法
     shouldUpdate = resumeMountClassInstance(
       workInProgress,
       Component,
@@ -842,6 +858,14 @@ function updateClassComponent(
       renderExpirationTime,
     );
   } else {
+    // 更新操作
+    // 1. 当新老prop，新老context变化时，执行componentWillReceiveProps
+    // 2. 执行getDerivedStateFromProps
+    // 3. 执行shouldComponentUpdate
+    // 4. 执行componentWillUpdate
+    // 5. 执行UNSAFE_componentWillUpdate
+    // 6. 标记componentDidUpdate
+    // 7. 标记getSnapShotBeforeUpdate
     shouldUpdate = updateClassInstance(
       current,
       workInProgress,
@@ -850,6 +874,13 @@ function updateClassComponent(
       renderExpirationTime,
     );
   }
+
+  // 更新完成
+  // 1. 标记ref的更新，即使当前组件不需要更新
+  // 2. 如果当前组件不需要更新，且不需要捕获错误，则执行bailoutOnAlreadyFinishedWord
+  // 3. 执行instance.render()，获取新children
+  // 4. 执行reconcileChildren调和子节点
+  // 5. 返回当前节点的child，下一个回合对child进行更新
   const nextUnitOfWork = finishClassComponent(
     current,
     workInProgress,
@@ -942,6 +973,7 @@ function finishClassComponent(
     // the existing children. Conceptually, the normal children and the children
     // that are shown on error are two different sets, so we shouldn't reuse
     // normal children even if their identities match.
+    // 当我们从错误中恢复时，应该移除当前children并重新调和
     forceUnmountCurrentAndReconcile(
       current,
       workInProgress,
@@ -996,7 +1028,11 @@ function updateHostRoot(current, workInProgress, renderExpirationTime) {
   const nextProps = workInProgress.pendingProps;
   const prevState = workInProgress.memoizedState;
   const prevChildren = prevState !== null ? prevState.element : null;
+
+  // 把curren上的updateQueue赋值给workInProgress上的updateQueue
   cloneUpdateQueue(current, workInProgress);
+
+  // 遍历updateQueue，并计算state
   processUpdateQueue(workInProgress, nextProps, null, renderExpirationTime);
   const nextState = workInProgress.memoizedState;
   // Caution: React DevTools currently depends on this property
@@ -2904,6 +2940,7 @@ function beginWork(
       oldProps !== newProps ||
       hasLegacyContextChanged() ||
       // Force a re-render if the implementation changed due to hot reload:
+      // hot load造成的更新
       (__DEV__ ? workInProgress.type !== current.type : false)
     ) {
       // If props or context changed, mark the fiber as having performed work.
@@ -3146,6 +3183,7 @@ function beginWork(
       );
     }
     case HostRoot:
+      // Root节点的更新
       return updateHostRoot(current, workInProgress, renderExpirationTime);
     case HostComponent:
       return updateHostComponent(current, workInProgress, renderExpirationTime);

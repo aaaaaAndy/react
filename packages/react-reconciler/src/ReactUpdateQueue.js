@@ -259,6 +259,9 @@ export function enqueueCapturedUpdate<State>(
   }
 }
 
+// ReplaceState：如果 update.payload 是函数，将该函数的返回值作为 nextState；否则直接用 payload 作为 nextState；
+// CaptureUpdate：将 workInProgress.effectTag 设为 DidCapture；
+// UpdateState：先根据 update.payload 是否是函数，计算 partialState；然后使用 _assign({}, prevState, partialState) 将 state 合并；
 function getStateFromUpdate<State>(
   workInProgress: Fiber,
   queue: UpdateQueue<State>,
@@ -339,8 +342,10 @@ export function processUpdateQueue<State>(
   renderExpirationTime: ExpirationTime,
 ): void {
   // This is always non-null on a ClassComponent or HostRoot
+  // 保证workInProgress上的update队列是 queue 的副本
   const queue: UpdateQueue<State> = (workInProgress.updateQueue: any);
 
+  // 并不是强制的更新
   hasForceUpdate = false;
 
   if (__DEV__) {
@@ -351,12 +356,15 @@ export function processUpdateQueue<State>(
   let baseQueue = queue.baseQueue;
 
   // The last pending update that hasn't been processed yet.
+  // 当有待处理的update时
   let pendingQueue = queue.shared.pending;
   if (pendingQueue !== null) {
     // We have new updates that haven't been processed yet.
     // We'll add them to the base queue.
+    // 已有的update还未处理完
     if (baseQueue !== null) {
       // Merge the pending queue and the base queue.
+      // TODO 这一段还不理解怎么合并的
       let baseFirst = baseQueue.next;
       let pendingFirst = pendingQueue.next;
       baseQueue.next = pendingFirst;
@@ -367,6 +375,7 @@ export function processUpdateQueue<State>(
 
     queue.shared.pending = null;
     // TODO: Pass `current` as argument
+		// 更新current的baseQueue
     const current = workInProgress.alternate;
     if (current !== null) {
       const currentQueue = current.updateQueue;
@@ -383,6 +392,7 @@ export function processUpdateQueue<State>(
     let newState = queue.baseState;
     let newExpirationTime = NoWork;
 
+    // 当执行更新队列的时候，这些属性可能会动态改变,所以先创建副本变量
     let newBaseState = null;
     let newBaseQueueFirst = null;
     let newBaseQueueLast = null;
@@ -390,11 +400,15 @@ export function processUpdateQueue<State>(
     if (first !== null) {
       let update = first;
       do {
+        // 获取该 update 的优先级，判断是否需要执行 update
         const updateExpirationTime = update.expirationTime;
+        // 当更新队列的第一个 update元素 的更新优先级低于renderExpirationTime的时候
         if (updateExpirationTime < renderExpirationTime) {
           // Priority is insufficient. Skip this update. If this is the first
           // skipped update, the previous update/state is the new base
           // update/state.
+          // 不执行该 update元素 的更新
+          // 将不更新的update拷贝一个新的update，并放入newBaseQueueLast和newBaseQueueLast中
           const clone: Update<State> = {
             expirationTime: update.expirationTime,
             suspenseConfig: update.suspenseConfig,
@@ -417,7 +431,7 @@ export function processUpdateQueue<State>(
           }
         } else {
           // This update does have sufficient priority.
-
+          // 当需要更新时
           if (newBaseQueueLast !== null) {
             const clone: Update<State> = {
               expirationTime: Sync, // This update is going to be committed so we never want uncommit it.
@@ -444,6 +458,7 @@ export function processUpdateQueue<State>(
           );
 
           // Process this update.
+          // 获取最新的 state
           newState = getStateFromUpdate(
             workInProgress,
             queue,
@@ -452,6 +467,8 @@ export function processUpdateQueue<State>(
             props,
             instance,
           );
+
+          // 处理setState()里的回调函数
           const callback = update.callback;
           if (callback !== null) {
             workInProgress.effectTag |= Callback;
@@ -463,6 +480,8 @@ export function processUpdateQueue<State>(
             }
           }
         }
+
+        // 跳到下一个 update 元素，循环
         update = update.next;
         if (update === null || update === first) {
           pendingQueue = queue.shared.pending;

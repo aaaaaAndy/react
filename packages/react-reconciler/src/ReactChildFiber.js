@@ -266,6 +266,7 @@ function warnOnFunctionType() {
 // a compiler or we can do it manually. Helpers that don't need this branching
 // live outside of this function.
 function ChildReconciler(shouldTrackSideEffects) {
+  // 删除returnFiber下的childToDelete节点
   function deleteChild(returnFiber: Fiber, childToDelete: Fiber): void {
     if (!shouldTrackSideEffects) {
       // Noop.
@@ -287,6 +288,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     childToDelete.effectTag = Deletion;
   }
 
+  // 循环删除currentFirstChild及其之后的所有兄弟节点
   function deleteRemainingChildren(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -367,6 +369,7 @@ function ChildReconciler(shouldTrackSideEffects) {
   function placeSingleChild(newFiber: Fiber): Fiber {
     // This is simpler for the single child case. We only need to do a
     // placement for inserting new children.
+    // 对了单个child，我们只需要做一个替换就好
     if (shouldTrackSideEffects && newFiber.alternate === null) {
       newFiber.effectTag = Placement;
     }
@@ -773,6 +776,13 @@ function ChildReconciler(shouldTrackSideEffects) {
     return knownKeys;
   }
 
+  // 1. 逐个对比两个数组,尝试通过index的顺序以及对比key来复用fiber节点
+  // 2. 调用updateSlot对比index相同的child的key是否相同，如果是，返回该对象，如果不是，返回null
+  // 3. 找道第一个不相等的位子，就跳出循环
+  // 4. 如果newChildren遍历完毕，就删除旧链表的剩余节点
+  // 5. 如果旧的遍历完毕，就插入newChildren剩余节点
+  // 6. 如果以上都不满足，就创建一个map,保存所有没有匹配到的节点，然后新的数组根据key从这个 map 里面查找，如果有则复用，没有则新建。
+  // 7. 在遍历过程中会调用placeChild方法，用于判断节点的 effects 是否该设置为 Placement
   function reconcileChildrenArray(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -807,13 +817,18 @@ function ChildReconciler(shouldTrackSideEffects) {
       }
     }
 
+    // 存储链表的第一个指针
     let resultingFirstChild: Fiber | null = null;
+    // 链表的当前指针
     let previousNewFiber: Fiber | null = null;
 
     let oldFiber = currentFirstChild;
     let lastPlacedIndex = 0;
     let newIdx = 0;
     let nextOldFiber = null;
+
+    // 对新节点newChildren的一次遍历
+		// 1. 逐个对比两个数组,尝试通过index的顺序以及对比key来复用fiber节点
     for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
       if (oldFiber.index > newIdx) {
         nextOldFiber = oldFiber;
@@ -821,12 +836,20 @@ function ChildReconciler(shouldTrackSideEffects) {
       } else {
         nextOldFiber = oldFiber.sibling;
       }
+
+      // 如果key相等,表示可以复用就返回复用的fiber节点 否则返回null
+      // 根据key来判断是否能够复用
+      // 2. 调用updateSlot对比index相同的child的key是否相同，如果是，返回该对象，如果不是，返回null
       const newFiber = updateSlot(
         returnFiber,
         oldFiber,
         newChildren[newIdx],
         expirationTime,
       );
+
+      // newFiber为null,跳出循环
+      // 不能复用
+      // 3. 找道第一个不相等的位子，就跳出循环
       if (newFiber === null) {
         // TODO: This breaks on empty slots like null children. That's
         // unfortunate because it triggers the slow path all the time. We need
@@ -837,14 +860,21 @@ function ChildReconciler(shouldTrackSideEffects) {
         }
         break;
       }
+
       if (shouldTrackSideEffects) {
+        // 返回的newFiber是新创建的，没有复用
         if (oldFiber && newFiber.alternate === null) {
           // We matched the slot, but we didn't reuse the existing fiber, so we
           // need to delete the existing child.
+          // 删除oldFiber
           deleteChild(returnFiber, oldFiber);
         }
       }
+
+      // 判断节点的 effects 是否为 Placement
       lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+
+      // 将复用的fiber节点链接成一个链表
       if (previousNewFiber === null) {
         // TODO: Move out of the loop. This only happens for the first run.
         resultingFirstChild = newFiber;
@@ -855,19 +885,24 @@ function ChildReconciler(shouldTrackSideEffects) {
         // with the previous one.
         previousNewFiber.sibling = newFiber;
       }
+      // 保存链表
       previousNewFiber = newFiber;
       oldFiber = nextOldFiber;
     }
 
+    // 删除剩余child
+    // 4. 如果newChildren遍历完毕，就删除旧链表的剩余节点
     if (newIdx === newChildren.length) {
       // We've reached the end of the new children. We can delete the rest.
       deleteRemainingChildren(returnFiber, oldFiber);
       return resultingFirstChild;
     }
 
+    // 5. 如果旧的遍历完毕，就插入newChildren剩余节点
     if (oldFiber === null) {
       // If we don't have any more existing children we can choose a fast path
       // since the rest will all be insertions.
+			// 已经没有可以复用的节点，但是newChildren还没有遍历完，直接创建新节点
       for (; newIdx < newChildren.length; newIdx++) {
         const newFiber = createChild(
           returnFiber,
@@ -890,10 +925,15 @@ function ChildReconciler(shouldTrackSideEffects) {
     }
 
     // Add all children to a key map for quick lookups.
+    // 把剩余的oldFibers放入一个map中
+    // 创建一个map,保存所有没有匹配到的节点，然后新的数组根据key从这个 map 里面查找，如果有则复用，没有则新建。
+    // 6. 如果以上都不满足，就创建一个map,保存所有没有匹配到的节点，然后新的数组根据key从这个 map 里面查找，如果有则复用，没有则新建。
     const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
 
     // Keep scanning and use the map to restore deleted items as moves.
+    // 从上面跳出for循环的索引开始继续向后遍历
     for (; newIdx < newChildren.length; newIdx++) {
+      // 从map中取出与newChild的key或者index相等的进行判断对比，看是否可复用
       const newFiber = updateFromMap(
         existingChildren,
         returnFiber,
@@ -908,11 +948,13 @@ function ChildReconciler(shouldTrackSideEffects) {
             // current, that means that we reused the fiber. We need to delete
             // it from the child list so that we don't add it to the deletion
             // list.
+            // 存在则删除map中的fiber
             existingChildren.delete(
               newFiber.key === null ? newIdx : newFiber.key,
             );
           }
         }
+        // 判断是否移动
         lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
         if (previousNewFiber === null) {
           resultingFirstChild = newFiber;
@@ -1131,6 +1173,7 @@ function ChildReconciler(shouldTrackSideEffects) {
   ): Fiber {
     // There's no need to check for keys on text nodes since we don't have a
     // way to define them.
+		// 如果该节点本来就是一个text节点，那么就可以复用
     if (currentFirstChild !== null && currentFirstChild.tag === HostText) {
       // We already have an existing node so let's just update it and delete
       // the rest.
@@ -1151,18 +1194,25 @@ function ChildReconciler(shouldTrackSideEffects) {
     return created;
   }
 
+  // 只有一个reactElement类型的child
   function reconcileSingleElement(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
     element: ReactElement,
     expirationTime: ExpirationTime,
   ): Fiber {
+  	// newChild，即新生成的child
     const key = element.key;
+
+    // workInProgress的第一个child
     let child = currentFirstChild;
+
+    // 通过key进行对比复用
     while (child !== null) {
       // TODO: If key === null and child.key === null, then this only applies to
       // the first item in the list.
       if (child.key === key) {
+        // 当新老key相等的时候
         switch (child.tag) {
           case Fragment: {
             if (element.type === REACT_FRAGMENT_TYPE) {
@@ -1218,14 +1268,18 @@ function ChildReconciler(shouldTrackSideEffects) {
           }
         }
         // Didn't match.
+				// 如果什么都匹配不到就删除所有的child
         deleteRemainingChildren(returnFiber, child);
         break;
       } else {
+      	// 当新老element的key不相等的时候就删除child
         deleteChild(returnFiber, child);
       }
       child = child.sibling;
     }
 
+    // 以上是先进行key判断，如果key相同则进行复用，如果不同则删除
+    // 以下是当不能复用时，创建新的ReactElement
     if (element.type === REACT_FRAGMENT_TYPE) {
       const created = createFiberFromFragment(
         element.props.children,
@@ -1304,6 +1358,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     // Handle top level unkeyed fragments as if they were arrays.
     // This leads to an ambiguity between <>{[...]}</> and <>...</>.
     // We treat the ambiguous cases above the same.
+    // 处理REACT_FRAGEMENT_TYPE
     const isUnkeyedTopLevelFragment =
       typeof newChild === 'object' &&
       newChild !== null &&
@@ -1339,6 +1394,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       }
     }
 
+    // string或number
     if (typeof newChild === 'string' || typeof newChild === 'number') {
       return placeSingleChild(
         reconcileSingleTextNode(
@@ -1350,6 +1406,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       );
     }
 
+    // 调和数组
     if (isArray(newChild)) {
       return reconcileChildrenArray(
         returnFiber,
@@ -1359,6 +1416,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       );
     }
 
+    // 与调和数组逻辑相似
     if (getIteratorFn(newChild)) {
       return reconcileChildrenIterator(
         returnFiber,
@@ -1408,6 +1466,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     }
 
     // Remaining cases are all treated as empty.
+		// 如果以上所有情况都匹配不到，则删除该节点下所有子节点
     return deleteRemainingChildren(returnFiber, currentFirstChild);
   }
 

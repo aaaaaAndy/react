@@ -106,7 +106,7 @@ import {
   commitHydratedContainer,
   commitHydratedSuspenseInstance,
   beforeRemoveInstance,
-} from './ReactFiberHostConfig';
+} from './forks/ReactFiberHostConfig.dom';
 import {
   captureCommitPhaseError,
   resolveRetryThenable,
@@ -327,6 +327,8 @@ function commitBeforeMutationLifeCycles(
   );
 }
 
+// 循环 FunctionComponent 上的 effect 链，
+// 根据hooks 上每个 effect 上的 effectTag，执行destroy/create 操作（类似于 componentDidMount/componentWillUnmount）
 function commitHookEffectListUnmount(tag: number, finishedWork: Fiber) {
   const updateQueue: FunctionComponentUpdateQueue | null = (finishedWork.updateQueue: any);
   let lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
@@ -576,6 +578,7 @@ function commitLifeCycles(
         // We could update instance props and state here,
         // but instead we rely on them being set during last render.
         // TODO: revisit this when we implement resuming.
+				// 执行setState的callback
         commitUpdateQueue(finishedWork, updateQueue, instance);
       }
       return;
@@ -1026,14 +1029,25 @@ function isHostParent(fiber: Fiber): boolean {
   );
 }
 
+// 查找插入节点的位置，也就是获取它后一个 DOM 兄弟节点的位置
+// 比如：在ab上，插入 c，插在 b 之前，找到兄弟节点 b；插在 b 之后，无兄弟节点
 function getHostSibling(fiber: Fiber): ?Instance {
-  // We're going to search forward into the tree until we find a sibling host
-  // node. Unfortunately, if multiple insertions are done in a row we have to
-  // search past them. This leads to exponential search for the next sibling.
+  // We're goings to search forward into the tree until we find a sibling host
+  //   // node. Unfortunately, if multiple insertions are done in a row we have to
+  //   // search past them. This leads to exponential earch for the next sibling.
   // TODO: Find a more efficient way to do this.
   let node: Fiber = fiber;
+
+  // 将外部 while 循环命名为 siblings，以便和内部 while 循环区分开
   siblings: while (true) {
     // If we didn't find anything, let's try the next sibling.
+    // 从目标节点向上循环，如果该节点没有兄弟节点，并且 父节点为 null 或是 父节点是DOM 元素的话，跳出循环
+
+    // 例子：树
+    //     a
+    //    /
+    //   b
+    // 在 a、b之间插入 c，那么 c 是没有兄弟节点的，直接返回 null
     while (node.sibling === null) {
       if (node.return === null || isHostParent(node.return)) {
         // If we pop out of the root or hit the parent the fiber we are the
@@ -1042,8 +1056,14 @@ function getHostSibling(fiber: Fiber): ?Instance {
       }
       node = node.return;
     }
+
+    // node 的兄弟节点的 return 指向 node 的父节点
     node.sibling.return = node.return;
+    // 移到兄弟节点上
     node = node.sibling;
+
+    // 如果 node.silbing 不是 DOM 元素的话（即是一个组件）
+    // 查找(node 的兄弟节点)(node.sibling) 中的第一个 DOM 节点
     while (
       node.tag !== HostComponent &&
       node.tag !== HostText &&
@@ -1051,20 +1071,28 @@ function getHostSibling(fiber: Fiber): ?Instance {
     ) {
       // If it is not host node and, we might have a host node inside it.
       // Try to search down until we find one.
+      // 尝试在非 DOM 节点内，找到 DOM 节点
+      // 跳出本次 while 循环，继续siblings while 循环
       if (node.effectTag & Placement) {
         // If we don't have a child, try the siblings instead.
         continue siblings;
       }
       // If we don't have a child, try the siblings instead.
       // We also skip portals because they are not part of this host tree.
+      // 如果 node 没有子节点，则从兄弟节点查找
       if (node.child === null || node.tag === HostPortal) {
         continue siblings;
       } else {
+        // 循环子节点
+        // 找到兄弟节点上的第一个 DOM 节点
+        // 可能是一个class组件，不是一个DOM节点，此时访问该组件的子节点
         node.child.return = node;
         node = node.child;
       }
     }
     // Check if this host node is stable or about to be placed.
+    // 找到了要插入的 node 的兄弟节点是一个 DOM 元素，并且它不是新增的节点的话，
+    // 返回该节点，也就是说找到了要插入的节点的位置，即在该节点的前面
     if (!(node.effectTag & Placement)) {
       // Found it!
       return node.stateNode;
@@ -1078,6 +1106,7 @@ function commitPlacement(finishedWork: Fiber): void {
   }
 
   // Recursively insert all host nodes into the parent.
+  // 向上循环祖先节点，返回是 DOM 元素的父节点
   const parentFiber = getHostParentFiber(finishedWork);
 
   // Note: these two variables *must* always be updated together.
@@ -1110,13 +1139,18 @@ function commitPlacement(finishedWork: Fiber): void {
           'in React. Please file an issue.',
       );
   }
+
+  // 如果父节点是文本节点的话
   if (parentFiber.effectTag & ContentReset) {
     // Reset the text content of the parent before doing any insertions
+    // 在进行任何插入操作前，需要先将 value 置为 ''
     resetTextContent(parent);
     // Clear ContentReset from the effect tag
+    // 再清除掉 ContentReset 这个 effectTag
     parentFiber.effectTag &= ~ContentReset;
   }
 
+  // 查找插入节点的位置，也就是获取它后一个 DOM 兄弟节点的位置
   const before = getHostSibling(finishedWork);
   // We only have the top Fiber that was inserted but we need to recurse down its
   // children to find all the terminal nodes.
@@ -1354,6 +1388,7 @@ function commitDeletion(
 }
 
 function commitWork(current: Fiber | null, finishedWork: Fiber): void {
+  // 因为是执行 DOM 操作，所以supportsMutation为 true，下面这一段不看
   if (!supportsMutation) {
     switch (finishedWork.tag) {
       case FunctionComponent:
@@ -1409,20 +1444,26 @@ function commitWork(current: Fiber | null, finishedWork: Fiber): void {
       // This prevents sibling component effects from interfering with each other,
       // e.g. a destroy function in one component should never override a ref set
       // by a create function in another component during the same commit.
+      // 循环 FunctionComponent 上的 effect 链，
+      // 根据hooks 上每个 effect 上的 effectTag，执行destroy/create 操作（类似于 componentDidMount/componentWillUnmount）
+      // 这里执行destroy操作
       commitHookEffectListUnmount(HookLayout | HookHasEffect, finishedWork);
       return;
     }
     case ClassComponent: {
       return;
     }
+    // DOM节点的话
     case HostComponent: {
       const instance: Instance = finishedWork.stateNode;
       if (instance != null) {
         // Commit the work prepared earlier.
+        // 待更新的属性
         const newProps = finishedWork.memoizedProps;
         // For hydration we reuse the update path but we treat the oldProps
         // as the newProps. The updatePayload will contain the real change in
         // this case.
+        // 旧的属性
         const oldProps = current !== null ? current.memoizedProps : newProps;
         const type = finishedWork.type;
         // TODO: Type the updateQueue to be specific to host components.

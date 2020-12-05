@@ -352,6 +352,7 @@ export function renderWithHooks(
   nextRenderExpirationTime: ExpirationTime,
 ): any {
   renderExpirationTime = nextRenderExpirationTime;
+  // 全局变量 当前正要渲染的 fiber 对象
   currentlyRenderingFiber = workInProgress;
 
   if (__DEV__) {
@@ -396,20 +397,27 @@ export function renderWithHooks(
       ReactCurrentDispatcher.current = HooksDispatcherOnMountInDEV;
     }
   } else {
+    // 用来存放 useState、useEffect 等 hook 函数的对象
+    // 对于第一个渲染走的是 HooksDispatcherOnMount
+    // 之后走的是 HooksDispatcherOnUpdate
     ReactCurrentDispatcher.current =
       current === null || current.memoizedState === null
         ? HooksDispatcherOnMount
         : HooksDispatcherOnUpdate;
   }
 
+  // 执行我们写的 function，执行完毕后，返回 children
+  // 我们写 function 的时候，第二个参数就是 context
   let children = Component(props, secondArg);
 
   // Check if there was a render phase update
+  // 判断是否在render时产生了一个新的update
   if (workInProgress.expirationTime === renderExpirationTime) {
     // Keep rendering in a loop for as long as render phase updates continue to
     // be scheduled. Use a counter to prevent infinite loops.
     let numberOfReRenders: number = 0;
     do {
+    	// 设置循环只执行一次
       workInProgress.expirationTime = NoWork;
 
       invariant(
@@ -440,6 +448,7 @@ export function renderWithHooks(
         ? HooksDispatcherOnRerenderInDEV
         : HooksDispatcherOnRerender;
 
+      // 重新渲染
       children = Component(props, secondArg);
     } while (workInProgress.expirationTime === renderExpirationTime);
   }
@@ -545,9 +554,12 @@ function mountWorkInProgressHook(): Hook {
 
   if (workInProgressHook === null) {
     // This is the first hook in the list
+    // 当前workInProgressHook链表为空的话，
+    // 将当前Hook作为第一个Hook
     currentlyRenderingFiber.memoizedState = workInProgressHook = hook;
   } else {
     // Append to the end of the list
+    // 否则将当前Hook添加到Hook链表的末尾
     workInProgressHook = workInProgressHook.next = hook;
   }
   return workInProgressHook;
@@ -644,19 +656,31 @@ function mountReducer<S, I, A>(
     lastRenderedReducer: reducer,
     lastRenderedState: (initialState: any),
   });
+  // 返回一个dispatch方法用来修改状态，并将此次更新添加update链表中
   const dispatch: Dispatch<A> = (queue.dispatch = (dispatchAction.bind(
     null,
     currentlyRenderingFiber,
     queue,
   ): any));
+  // 返回状态和修改状态的方法
   return [hook.memoizedState, dispatch];
 }
 
+// 1. FunctionComponent 不是一个可以实例化的对象，也就没有 this，没有 state，但是 React 的 Fiber 对象为此提供了可能，
+//    由于 Fiber 是一个对象，所以就将 FunctionComponent 中无法挂载的一些值和方法挂载到了 FunctionComponent 对应的 Fiber 对象上，
+//    并且起了个名字叫做 Hook。具体就是挂载到 Fiber 对象的 memoizedState 上。
+// 2. Fiber 中也使用了 Update 链表的形式存储更新，在本例中，每次点击都会产生一个 update，放入 Hook 对象的 queue 中，
+//    然后触发一次任务调度，将这些更新执行。
+// 3. Hooks 对外暴露的接口，其实就是用来操作 Hook 对象的，Hook 对象通过 Fiber 和 FunctionComponent 完成绑定，
+//    间接控制了 FunctionComponent 的行为。
+// 4. Hooks 的一个小优化：产生 update 的时候，如果当前 fiber 上无更新任务，会计算本次 update 的结果，与产生 update 之前的比较，
+//    如果没有变化，不会进行任务调度，如果有变化的话，会将结果存储起来，下次调度的时候就不用再计算了。
 function updateReducer<S, I, A>(
   reducer: (S, A) => S,
   initialArg: I,
   init?: I => S,
 ): [S, Dispatch<A>] {
+  // 复制一个当前的 hook 对象最为工作区
   const hook = updateWorkInProgressHook();
   const queue = hook.queue;
   invariant(
@@ -696,12 +720,14 @@ function updateReducer<S, I, A>(
     let newBaseQueueFirst = null;
     let newBaseQueueLast = null;
     let update = first;
+    // 循环完成 update
     do {
       const updateExpirationTime = update.expirationTime;
       if (updateExpirationTime < renderExpirationTime) {
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
         // update/state.
+        // 优先级不够
         const clone: Update<S, A> = {
           expirationTime: update.expirationTime,
           suspenseConfig: update.suspenseConfig,
@@ -748,12 +774,14 @@ function updateReducer<S, I, A>(
         );
 
         // Process this update.
+        // 有 eagerReducer，说明这个 action 已经在空闲的时候完成了计算，直接用这个计算结果就行
         if (update.eagerReducer === reducer) {
           // If this update was processed eagerly, and its reducer matches the
           // current reducer, we can use the eagerly computed state.
           newState = ((update.eagerState: any): S);
         } else {
           const action = update.action;
+          // 调用 action 计算 newState
           newState = reducer(newState, action);
         }
       }
@@ -772,6 +800,7 @@ function updateReducer<S, I, A>(
       markWorkInProgressReceivedUpdate();
     }
 
+    // hook的值更新
     hook.memoizedState = newState;
     hook.baseState = newBaseState;
     hook.baseQueue = newBaseQueueLast;
@@ -840,18 +869,23 @@ function rerenderReducer<S, I, A>(
 function mountState<S>(
   initialState: (() => S) | S,
 ): [S, Dispatch<BasicStateAction<S>>] {
+  // 获取当前的Hook节点，同时将当前Hook添加到Hook链表中
+	// 挂载一个全局的workInProgressHook
   const hook = mountWorkInProgressHook();
   if (typeof initialState === 'function') {
     // $FlowFixMe: Flow doesn't like mixed types
     initialState = initialState();
   }
+
   hook.memoizedState = hook.baseState = initialState;
+  // 声明一个链表来存放更新
   const queue = (hook.queue = {
     pending: null,
     dispatch: null,
     lastRenderedReducer: basicStateReducer,
     lastRenderedState: (initialState: any),
   });
+  // 返回一个dispatch方法用来修改状态，并将此次更新添加update链表中
   const dispatch: Dispatch<
     BasicStateAction<S>,
   > = (queue.dispatch = (dispatchAction.bind(
@@ -1260,6 +1294,9 @@ function rerenderTransition(
   return [start, isPending];
 }
 
+// fiber 就是当前 functionComponent 的 Fiber 对象
+// queue 是首次渲染的时候 new 的一个对象，用于存放后续的 dispatchAction 的 action
+// action 就是我们写的 setCount(count + 1)
 function dispatchAction<S, A>(
   fiber: Fiber,
   queue: UpdateQueue<S, A>,
@@ -1283,11 +1320,13 @@ function dispatchAction<S, A>(
     suspenseConfig,
   );
 
+  // 创建一个 update
   const update: Update<S, A> = {
     expirationTime,
     suspenseConfig,
     action,
     eagerReducer: null,
+    // 提前计算好的这个 update 产生的变化，用于优化性能
     eagerState: null,
     next: (null: any),
   };
@@ -1315,6 +1354,7 @@ function dispatchAction<S, A>(
     // This is a render phase update. Stash it in a lazily-created map of
     // queue -> linked list of updates. After this render pass, we'll restart
     // and apply the stashed updates on top of the work-in-progress hook.
+    // 处理在render时产生的更新，将其标记，待这次更新完成后，再重新开启这次更新
     didScheduleRenderPhaseUpdate = true;
     update.expirationTime = renderExpirationTime;
     currentlyRenderingFiber.expirationTime = renderExpirationTime;
@@ -1323,6 +1363,7 @@ function dispatchAction<S, A>(
       fiber.expirationTime === NoWork &&
       (alternate === null || alternate.expirationTime === NoWork)
     ) {
+    	// 当前fiber上无任务，我们可以直接计算state，如果新老state相同，则跳过这次更新
       // The queue is currently empty, which means we can eagerly compute the
       // next state before entering the render phase. If the new state is the
       // same as the current state, we may be able to bail out entirely.
@@ -1387,6 +1428,7 @@ export const ContextOnlyDispatcher: Dispatcher = {
   useTransition: throwInvalidHookError,
 };
 
+// Mount 阶段Hooks的定义
 const HooksDispatcherOnMount: Dispatcher = {
   readContext,
 
@@ -1405,6 +1447,7 @@ const HooksDispatcherOnMount: Dispatcher = {
   useTransition: mountTransition,
 };
 
+// Update阶段Hooks的定义
 const HooksDispatcherOnUpdate: Dispatcher = {
   readContext,
 

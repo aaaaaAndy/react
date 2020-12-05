@@ -583,6 +583,7 @@ function constructClassInstance(
     }
   }
 
+  // 获取context
   if (typeof contextType === 'object' && contextType !== null) {
     context = readContext((contextType: any));
   } else if (!disableLegacyContext) {
@@ -782,6 +783,7 @@ function mountClassInstance(
 
   initializeUpdateQueue(workInProgress);
 
+  // 获取context
   const contextType = ctor.contextType;
   if (typeof contextType === 'object' && contextType !== null) {
     instance.context = readContext(contextType);

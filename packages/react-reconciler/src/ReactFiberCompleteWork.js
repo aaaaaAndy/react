@@ -81,7 +81,7 @@ import {
   mountFundamentalComponent,
   cloneFundamentalInstance,
   shouldUpdateFundamentalComponent,
-} from './ReactFiberHostConfig';
+} from './forks/ReactFiberHostConfig.dom';  // TODO 此处修改了文件指向，默认指向.dom.js
 import {
   getRootHostContainer,
   popHostContext,
@@ -795,13 +795,16 @@ function completeWork(
     }
     case HostText: {
       let newText = newProps;
+      // 如果不是第一次渲染
       if (current && workInProgress.stateNode != null) {
         const oldText = current.memoizedProps;
         // If we have an alternate, that means this is an update and we need
         // to schedule a side-effect to do the updates.
         updateHostText(current, workInProgress, oldText, newText);
       } else {
+        // 如果是第一次渲染
         if (typeof newText !== 'string') {
+          // 当文本节点更新的内容不是 string 类型的话，说明 React 内部出现了 error
           invariant(
             workInProgress.stateNode !== null,
             'We must have new props for new mounts. This error is likely ' +
@@ -812,11 +815,13 @@ function completeWork(
         const rootContainerInstance = getRootHostContainer();
         const currentHostContext = getHostContext();
         let wasHydrated = popHydrationState(workInProgress);
+        // 如果是服务端渲染的话，暂时跳过
         if (wasHydrated) {
           if (prepareToHydrateHostTextInstance(workInProgress)) {
             markUpdate(workInProgress);
           }
         } else {
+          // 第一次渲染的话，创建文本节点的实例并赋值给 stateNode
           workInProgress.stateNode = createTextInstance(
             newText,
             rootContainerInstance,

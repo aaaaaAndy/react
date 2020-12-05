@@ -20,7 +20,7 @@ import {
   getCurrentTime,
   forceFrameRate,
   requestPaint,
-} from './SchedulerHostConfig';
+} from './forks/SchedulerHostConfig.default';
 import {push, pop, peek} from './SchedulerMinHeap';
 
 // TODO: Use symbols?

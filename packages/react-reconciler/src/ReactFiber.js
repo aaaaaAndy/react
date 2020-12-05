@@ -401,6 +401,9 @@ export function resolveLazyComponentTag(Component: Function): WorkTag {
 }
 
 // This is used to create an alternate fiber to do work on.
+// 如果 workInProgress 不存在，根据传入的 fiber 复制一份，并将各自的 alternate 属性指向对方；
+// 如果已存在，重置 effectTag 和相关的指针（nextEffect、firstEffect、lastEffect）；
+// 避免 dependencies 属性的引用赋值，其他属性直接赋值；
 export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   let workInProgress = current.alternate;
   if (workInProgress === null) {
@@ -429,6 +432,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
       workInProgress._debugHookTypes = current._debugHookTypes;
     }
 
+    // 将alternate指向对方
     workInProgress.alternate = current;
     current.alternate = workInProgress;
   } else {
@@ -596,6 +600,7 @@ export function createHostRootFiber(tag: RootTag): Fiber {
     mode |= ProfileMode;
   }
 
+  // 第一次调用ReactDOM.render()的时候创建的RootFiber的tag为HostRoot = 3;
   return createFiber(HostRoot, null, null, mode);
 }
 

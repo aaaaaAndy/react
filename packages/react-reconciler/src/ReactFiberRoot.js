@@ -140,6 +140,7 @@ export function createFiberRoot(
   hydrate: boolean,
   hydrationCallbacks: null | SuspenseHydrationCallbacks,
 ): FiberRoot {
+	// 第一次render的时候此处FiberRoot的tag为legacyRoot = 0
   const root: FiberRoot = (new FiberRootNode(containerInfo, tag, hydrate): any);
   if (enableSuspenseCallback) {
     root.hydrationCallbacks = hydrationCallbacks;
@@ -191,11 +192,15 @@ export function markRootSuspendedAtTime(
   }
 }
 
+// 更新 fiberRoot 的待处理的时间范围，即 firstPendingTime；
+// 并更新 fiberRoot 相关暂停的时间范围，即 firstSuspendedTime、lastSuspendedTime；
+// 跟下一个已知待处理的级别比较，如果当前 expirationTime 级别更高，更新 nextKnownPendingLevel；
 export function markRootUpdatedAtTime(
   root: FiberRoot,
   expirationTime: ExpirationTime,
 ): void {
   // Update the range of pending times
+  // 更新待处理时间范围
   const firstPendingTime = root.firstPendingTime;
   if (expirationTime > firstPendingTime) {
     root.firstPendingTime = expirationTime;
@@ -203,6 +208,7 @@ export function markRootUpdatedAtTime(
 
   // Update the range of suspended times. Treat everything lower priority or
   // equal to this update as unsuspended.
+  // 更新暂停时间范围。对待所有低优先级的事物或等于此更新为未暂停。
   const firstSuspendedTime = root.firstSuspendedTime;
   if (firstSuspendedTime !== NoWork) {
     if (expirationTime >= firstSuspendedTime) {
@@ -214,6 +220,7 @@ export function markRootUpdatedAtTime(
 
     // This is a pending level. Check if it's higher priority than the next
     // known pending level.
+    // 这是一个待处理的级别。检查其优先级是否高于下一个已知的待处理级别。
     if (expirationTime > root.nextKnownPendingLevel) {
       root.nextKnownPendingLevel = expirationTime;
     }
