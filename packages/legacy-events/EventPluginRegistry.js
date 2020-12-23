@@ -21,11 +21,28 @@ type EventPluginOrder = null | Array<PluginName>;
 
 /**
  * Injectable ordering of event plugins.
+ * @example
+ *  eventPluginOrder = [
+ *    'ResponderEventPlugin',
+ *    'SimpleEventPlugin',
+ *    'EnterLeaveEventPlugin',
+ *    'ChangeEventPlugin',
+ *    'SelectEventPlugin',
+ *    'BeforeInputEventPlugin',
+ *  ]
  */
 let eventPluginOrder: EventPluginOrder = null;
 
 /**
  * Injectable mapping from names to event plugin modules.
+ * @example
+ *  namesToPlugins = {
+ *    SimpleEventPlugin: SimpleEventPlugin,
+ *    EnterLeaveEventPlugin: EnterLeaveEventPlugin,
+ *    ChangeEventPlugin: ChangeEventPlugin,
+ *    SelectEventPlugin: SelectEventPlugin,
+ *    BeforeInputEventPlugin: BeforeInputEventPlugin,
+ *  }
  */
 const namesToPlugins: NamesToPlugins = {};
 
@@ -39,36 +56,23 @@ function recomputePluginOrdering(): void {
     // Wait until an `eventPluginOrder` is injected.
     return;
   }
+
   for (const pluginName in namesToPlugins) {
     const pluginModule = namesToPlugins[pluginName];
     const pluginIndex = eventPluginOrder.indexOf(pluginName);
-    invariant(
-      pluginIndex > -1,
-      'EventPluginRegistry: Cannot inject event plugins that do not exist in ' +
-        'the plugin ordering, `%s`.',
-      pluginName,
-    );
+
     if (plugins[pluginIndex]) {
       continue;
     }
-    invariant(
-      pluginModule.extractEvents,
-      'EventPluginRegistry: Event plugins must implement an `extractEvents` ' +
-        'method, but `%s` does not.',
-      pluginName,
-    );
+
     plugins[pluginIndex] = pluginModule;
     const publishedEvents = pluginModule.eventTypes;
+
     for (const eventName in publishedEvents) {
-      invariant(
-        publishEventForPlugin(
-          publishedEvents[eventName],
-          pluginModule,
-          eventName,
-        ),
-        'EventPluginRegistry: Failed to publish event `%s` for plugin `%s`.',
+      publishEventForPlugin(
+        publishedEvents[eventName],
+        pluginModule,
         eventName,
-        pluginName,
       );
     }
   }
@@ -87,12 +91,7 @@ function publishEventForPlugin(
   pluginModule: PluginModule<AnyNativeEvent>,
   eventName: string,
 ): boolean {
-  invariant(
-    !eventNameDispatchConfigs.hasOwnProperty(eventName),
-    'EventPluginRegistry: More than one plugin attempted to publish the same ' +
-      'event name, `%s`.',
-    eventName,
-  );
+	// eventNameDispatchConfigs = { change: {} };
   eventNameDispatchConfigs[eventName] = dispatchConfig;
 
   const phasedRegistrationNames = dispatchConfig.phasedRegistrationNames;
@@ -101,9 +100,9 @@ function publishEventForPlugin(
       if (phasedRegistrationNames.hasOwnProperty(phaseName)) {
         const phasedRegistrationName = phasedRegistrationNames[phaseName];
         publishRegistrationName(
-          phasedRegistrationName,
-          pluginModule,
-          eventName,
+          phasedRegistrationName, // onChange
+          pluginModule, // ChangeEventPlugin,最外层那个对象
+          eventName, // change
         );
       }
     }
@@ -127,19 +126,12 @@ function publishEventForPlugin(
  * @private
  */
 function publishRegistrationName(
-  registrationName: string,
+  registrationName: string, // onChange
   pluginModule: PluginModule<AnyNativeEvent>,
-  eventName: string,
+  eventName: string, // change
 ): void {
-  invariant(
-    !registrationNameModules[registrationName],
-    'EventPluginRegistry: More than one plugin attempted to publish the same ' +
-      'registration name, `%s`.',
-    registrationName,
-  );
   registrationNameModules[registrationName] = pluginModule;
-  registrationNameDependencies[registrationName] =
-    pluginModule.eventTypes[eventName].dependencies;
+  registrationNameDependencies[registrationName] = pluginModule.eventTypes[eventName].dependencies;
 
   if (__DEV__) {
     const lowerCasedName = registrationName.toLowerCase();
@@ -157,21 +149,36 @@ function publishRegistrationName(
 
 /**
  * Ordered list of injected plugins.
+ * @example
+ *  plugins = [
+ *    undefined,
+ *    SimpleEventPlugin,
+ *    EnterLeaveEventPlugin,
+ *    ChangeEventPlugin,
+ *    SelectEventPlugin,
+ *    BeforeInputEventPlugin,
+ *  ]
  */
 export const plugins = [];
 
 /**
  * Mapping from event name to dispatch config
+ * @example
+ * eventNameDispatchConfigs = { change: {} }
  */
 export const eventNameDispatchConfigs = {};
 
 /**
  * Mapping from registration name to plugin module
+ * @example
+ *  registrationNameModules = { onChange: {} }
  */
 export const registrationNameModules = {};
 
 /**
  * Mapping from registration name to event name
+ * @example
+ *  registrationNameDependencies = { onChange: [] }
  */
 export const registrationNameDependencies = {};
 
@@ -201,6 +208,7 @@ export function injectEventPluginOrder(
       'once. You are likely trying to load more than one copy of React.',
   );
   // Clone the ordering so it cannot be dynamically mutated.
+  // 浅复制，克隆数组，可以动态修改，不会影响原数组
   eventPluginOrder = Array.prototype.slice.call(injectedEventPluginOrder);
   recomputePluginOrdering();
 }
@@ -222,7 +230,9 @@ export function injectEventPluginsByName(
     if (!injectedNamesToPlugins.hasOwnProperty(pluginName)) {
       continue;
     }
+    // 循环获取pluginModule
     const pluginModule = injectedNamesToPlugins[pluginName];
+
     if (
       !namesToPlugins.hasOwnProperty(pluginName) ||
       namesToPlugins[pluginName] !== pluginModule
@@ -233,10 +243,12 @@ export function injectEventPluginsByName(
           'using the same name, `%s`.',
         pluginName,
       );
+      // 把injectedNamesToPlugins都插入到namesToPlugins上
       namesToPlugins[pluginName] = pluginModule;
       isOrderingDirty = true;
     }
   }
+
   if (isOrderingDirty) {
     recomputePluginOrdering();
   }

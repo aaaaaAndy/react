@@ -413,7 +413,9 @@ function schedulePassiveEffects(finishedWork: Fiber) {
           (tag & HookPassive) !== NoHookEffect &&
           (tag & HookHasEffect) !== NoHookEffect
         ) {
+          // 向`pendingPassiveHookEffectsUnmount`数组内`push`要销毁的effect
           enqueuePendingPassiveHookEffectUnmount(finishedWork, effect);
+          // 向`pendingPassiveHookEffectsMount`数组内`push`要执行回调的effect
           enqueuePendingPassiveHookEffectMount(finishedWork, effect);
         }
         effect = next;

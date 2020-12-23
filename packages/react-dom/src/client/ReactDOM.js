@@ -11,7 +11,10 @@ import type {ReactNodeList} from 'shared/ReactTypes';
 import type {Container} from './ReactDOMHostConfig';
 
 import '../shared/checkReact';
+
+// 执行事件模块的注入
 import './ReactDOMClientInjection';
+
 import {
   findDOMNode,
   render,

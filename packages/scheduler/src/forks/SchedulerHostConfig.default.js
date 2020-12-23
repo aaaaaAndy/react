@@ -169,6 +169,9 @@ if (
     requestPaint = function() {};
   }
 
+  // 这个方法其实是 Scheduler 包提供给开发者的公共 API，
+  // 允许开发者根据不同的设备刷新率设置调度间隔
+  // 其实就是因地制宜的考虑
   forceFrameRate = function(fps) {
     if (fps < 0 || fps > 125) {
       // Using console['error'] to evade Babel and ESLint
@@ -181,18 +184,26 @@ if (
     if (fps > 0) {
       yieldInterval = Math.floor(1000 / fps);
     } else {
+      // 显然，如果没传或者传了个负的，就重置为 5ms，提升了一些鲁棒性
       // reset the framerate
       yieldInterval = 5;
     }
   };
 
   const performWorkUntilDeadline = () => {
+    // [A]：先检查当前的 scheduledHostCallback 是否存在
+    // 换句话说就是当前有没有事需要做
     if (scheduledHostCallback !== null) {
       const currentTime = getCurrentTime();
       // Yield after `yieldInterval` ms, regardless of where we are in the vsync
       // cycle. This means there's always time remaining at the beginning of
       // the message event.
+      // 啊，截止时间！
+      // 看来就是截止到 yieldInterval 之后，是多少呢？
+      // 按前文的内容，应该是 5ms 吧，我们之后再验证
       deadline = currentTime + yieldInterval;
+      // 唔，新鲜的截止时间，换句话说就是还有多少时间呗
+      // 有了显示的剩余时间定义，无论我们处于 vsync cycle 的什么节点，在收到消息（任务）的时候都有时间了
       const hasTimeRemaining = true;
       try {
         const hasMoreWork = scheduledHostCallback(
@@ -200,20 +211,26 @@ if (
           currentTime,
         );
         if (!hasMoreWork) {
+          // 如果完成了最后一个任务，就关闭消息循环，并清洗掉 scheduledHostCallback 的引用
           isMessageLoopRunning = false;
           scheduledHostCallback = null;
         } else {
           // If there's more work, schedule the next message event at the end
           // of the preceding one.
+          // [C]：如果还有任务要做，就用 port 继续向 channel 的 port2 端口发消息
+          // 显然，这是一个类似于递归的操作
+          // 那么，如果没有任务了，显然不会走到这儿，为什么还要判断 scheduledHostCallback 呢？往后看
           port.postMessage(null);
         }
       } catch (error) {
         // If a scheduler task throws, exit the current browser task so the
         // error can be observed.
+        // 如果当前的任务执行除了故障，则进入下一个任务，并抛出错误
         port.postMessage(null);
         throw error;
       }
     } else {
+      // [B]：没事儿做了，那么就不用循环的检查消息了呗
       isMessageLoopRunning = false;
     }
     // Yielding to the browser will give it a chance to paint, so we can
@@ -225,10 +242,20 @@ if (
   const port = channel.port2;
   channel.port1.onmessage = performWorkUntilDeadline;
 
+  // 1.准备好当前要执行的任务（scheduledHostCallback）
+  // 2.开启消息循环调度
+  // 3.调用 performWorkUntilDeadline
   requestHostCallback = function(callback) {
+    // 将传入的 callback 赋值给 scheduledHostCallback
+    // 类比 `requestAnimationFrame(() => { /* doSomething */ })` 这样的使用方法，
+    // 我们可以推断 scheduledHostCallback 就是当前要执行的任务（scheduled嘛）
     scheduledHostCallback = callback;
+    // isMessageLoopRunning 标志当前消息循环是否开启
+    // 消息循环干嘛用的呢？就是不断的检查有没有新的消息——即新的任务——嘛
     if (!isMessageLoopRunning) {
+      // 如果当前消息循环是关闭的，则 rHC 有权力打开它
       isMessageLoopRunning = true;
+      // 打开以后，channel 的 port2 端口将受到消息，也就是开始 performWorkUntilDeadline 了
       port.postMessage(null);
     }
   };

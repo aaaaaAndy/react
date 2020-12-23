@@ -909,6 +909,7 @@ function rerenderState<S>(
 }
 
 function pushEffect(tag, create, destroy, deps) {
+  // return 这个effect,挂载到fiber.memoizedState上
   const effect: Effect = {
     tag,
     create,
@@ -917,8 +918,11 @@ function pushEffect(tag, create, destroy, deps) {
     // Circular
     next: (null: any),
   };
+
+  // 将effect加载fiber.updateQueue链表里
   let componentUpdateQueue: null | FunctionComponentUpdateQueue = (currentlyRenderingFiber.updateQueue: any);
   if (componentUpdateQueue === null) {
+    // 返回一个只有{ lastEffect: null }的对象
     componentUpdateQueue = createFunctionComponentUpdateQueue();
     currentlyRenderingFiber.updateQueue = (componentUpdateQueue: any);
     componentUpdateQueue.lastEffect = effect.next = effect;
@@ -933,6 +937,7 @@ function pushEffect(tag, create, destroy, deps) {
       componentUpdateQueue.lastEffect = effect;
     }
   }
+
   return effect;
 }
 
@@ -952,8 +957,19 @@ function updateRef<T>(initialValue: T): {|current: T|} {
 }
 
 function mountEffectImpl(fiberEffectTag, hookEffectTag, create, deps): void {
+  // const hook: Hook = {
+  //   memoizedState: null,
+  //
+  //   baseState: null,
+  //   baseQueue: null,
+  //   queue: null,
+  //
+  //   next: null,
+  // };
+	// 与mountState内调用同一个函数，创建一个hook对象，挂载到fiber.memoizedState上，以next连接下一个hook对象。
   const hook = mountWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
+  // 给当前fiber加上fiberEffectTag标志位
   currentlyRenderingFiber.effectTag |= fiberEffectTag;
   hook.memoizedState = pushEffect(
     HookHasEffect | hookEffectTag,
@@ -970,10 +986,13 @@ function updateEffectImpl(fiberEffectTag, hookEffectTag, create, deps): void {
 
   if (currentHook !== null) {
     const prevEffect = currentHook.memoizedState;
+    // 当currentHook不为空时，挂载prevEffect执行后返回的函数到destroy上
     destroy = prevEffect.destroy;
     if (nextDeps !== null) {
       const prevDeps = prevEffect.deps;
+
       if (areHookInputsEqual(nextDeps, prevDeps)) {
+        // 注意这里只透传了hookEffectTag，为4，表明只是一个副作用，且没有更新
         pushEffect(hookEffectTag, create, destroy, nextDeps);
         return;
       }
@@ -982,6 +1001,9 @@ function updateEffectImpl(fiberEffectTag, hookEffectTag, create, deps): void {
 
   currentlyRenderingFiber.effectTag |= fiberEffectTag;
 
+  // 新老依赖不同，视为一个新的useEffects
+  // 此时destroy为undefined
+  // 这里传入了HookHasEffect | hookEffectTag，表明是一个有更新的副作用
   hook.memoizedState = pushEffect(
     HookHasEffect | hookEffectTag,
     create,
@@ -1000,6 +1022,8 @@ function mountEffect(
       warnIfNotCurrentlyActingEffectsInDEV(currentlyRenderingFiber);
     }
   }
+  // 此处直接调用mountEffectImpl,设置两个effectTag
+  // mountEffectImpl在下边
   return mountEffectImpl(
     UpdateEffect | PassiveEffect,
     HookPassive,
@@ -1344,6 +1368,9 @@ function dispatchAction<S, A>(
     update.next = pending.next;
     pending.next = update;
   }
+
+  // 将update挂载到queue.pending上，并计算当前update的eagerState
+  // 等scheduleWork调度到当前函数组件进行更新时，计算update对象，获取eagerState，赋值给memoizedState
   queue.pending = update;
 
   const alternate = fiber.alternate;
@@ -1533,7 +1560,7 @@ if (__DEV__) {
       mountHookTypesDev();
       return readContext(context, observedBits);
     },
-    useEffect(
+    useEffectuseLayoutEffect(
       create: () => (() => void) | void,
       deps: Array<mixed> | void | null,
     ): void {

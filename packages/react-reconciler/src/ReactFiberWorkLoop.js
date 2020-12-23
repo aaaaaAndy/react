@@ -1887,6 +1887,7 @@ function commitRootImpl(root, renderPriorityLevel) {
     startCommitSnapshotEffectsTimer();
     prepareForCommit(root.containerInfo);
     nextEffect = firstEffect;
+    // commitBeforeMutationEffects调用
     do {
       if (__DEV__) {
         invokeGuardedCallback(null, commitBeforeMutationEffects, null);
@@ -1898,6 +1899,7 @@ function commitRootImpl(root, renderPriorityLevel) {
         }
       } else {
         try {
+          // 此版本并不会在此处执行hooks相关的东西
           commitBeforeMutationEffects();
         } catch (error) {
           invariant(nextEffect !== null, 'Should be working on an effect.');
@@ -1918,6 +1920,7 @@ function commitRootImpl(root, renderPriorityLevel) {
     // The next phase is the mutation phase, where we mutate the host tree.
     startCommitHostEffectsTimer();
     nextEffect = firstEffect;
+    // 这里调用commitHookEffectListUnmount，只调用useLayoutEffect
     do {
       if (__DEV__) {
         invokeGuardedCallback(
@@ -1958,6 +1961,7 @@ function commitRootImpl(root, renderPriorityLevel) {
     // layout, but class component lifecycles also fire here for legacy reasons.
     startCommitLifeCyclesTimer();
     nextEffect = firstEffect;
+    // 这里调用commitHookEffectListMount，只调用useLayoutEffect
     do {
       if (__DEV__) {
         invokeGuardedCallback(
@@ -2223,10 +2227,7 @@ function commitMutationEffects(root: FiberRoot, renderPriorityLevel) {
   }
 }
 
-function commitLayoutEffects(
-  root: FiberRoot,
-  committedExpirationTime: ExpirationTime,
-) {
+function commitLayoutEffects(root: FiberRoot, committedExpirationTime: ExpirationTime) {
   // TODO: Should probably move the bulk of this function to commitWork.
   while (nextEffect !== null) {
     setCurrentDebugFiberInDEV(nextEffect);
@@ -2266,6 +2267,7 @@ export function flushPassiveEffects() {
   }
 }
 
+// 向`pendingPassiveHookEffectsMount`数组内`push`要执行回调的effect
 export function enqueuePendingPassiveHookEffectMount(
   fiber: Fiber,
   effect: HookEffect,
@@ -2282,6 +2284,7 @@ export function enqueuePendingPassiveHookEffectMount(
   }
 }
 
+// 向`pendingPassiveHookEffectsUnmount`数组内`push`要销毁的effect
 export function enqueuePendingPassiveHookEffectUnmount(
   fiber: Fiber,
   effect: HookEffect,

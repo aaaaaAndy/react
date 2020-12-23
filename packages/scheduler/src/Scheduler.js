@@ -180,8 +180,10 @@ function workLoop(hasTimeRemaining, initialTime) {
     if (callback !== null) {
       currentTask.callback = null;
       currentPriorityLevel = currentTask.priorityLevel;
+      // 判断当前任务是否过期
       const didUserCallbackTimeout = currentTask.expirationTime <= currentTime;
       markTaskRun(currentTask, currentTime);
+      // [C]：continuationCallback？这是什么意思？让任务继续执行？
       const continuationCallback = callback(didUserCallbackTimeout);
       currentTime = getCurrentTime();
       if (typeof continuationCallback === 'function') {
@@ -192,6 +194,10 @@ function workLoop(hasTimeRemaining, initialTime) {
           markTaskCompleted(currentTask, currentTime);
           currentTask.isQueued = false;
         }
+        // 如果 continuationCallback 不成立，就会 pop 掉当前任务，
+        // 逻辑上则应该是判定当前任务已经完成
+        // Emm x7... 那么 schedule 进来的任务，实际上应该是要遵循这个规则的
+        // [D]：我们待会儿再强调一下这个问题
         if (currentTask === peek(taskQueue)) {
           pop(taskQueue);
         }
@@ -313,9 +319,12 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
     startTime = currentTime;
   }
 
+  // 定义一个过期时间，之后还会遇到它
   var expirationTime = startTime + timeout;
 
+  // 啊，从这里我们可以看到，在 Scheduler 中一个 task 到底长什么样了
   var newTask = {
+    // Scheduler.js 中全局定义了一个 taskIdCounter 作为 taskId 的生产器
     id: taskIdCounter++,
     callback,
     priorityLevel,
@@ -329,7 +338,12 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
 
   if (startTime > currentTime) {
     // This is a delayed task.
+    // 还记得 options 中的 delay 属性吗，这就给予了该任务开始时间大于当前时间的可能
+    // 唔，前面定义 sortIndex 又出现了，在这种情况下被赋值为了 startTime，
     newTask.sortIndex = startTime;
+    // [E]：这里出现了一个定时器队列（timerQueue）
+    // 如果开始时间大于当前时间，就将它 push 进这个定时器队列
+    // 显然，对于要将来执行的任务，势必得将它放在一个“待激活”的队列中
     push(timerQueue, newTask);
     if (peek(taskQueue) === null && newTask === peek(timerQueue)) {
       // All tasks are delayed, and this is the task with the earliest delay.
@@ -343,7 +357,9 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
       requestHostTimeout(handleTimeout, startTime - currentTime);
     }
   } else {
+    // expirationTime 作为了 sortIndex 的值，从逻辑上基本可以确认 sortIndex 就是用于排序了
     newTask.sortIndex = expirationTime;
+    // [F]: 这里又出现了 push 方法，这次是将任务 push 进任务队列（taskQueue），看来定时器队列和任务队列是同构的咯？
     push(taskQueue, newTask);
     if (enableProfiling) {
       markTaskStart(newTask, currentTime);
@@ -351,6 +367,7 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
     }
     // Schedule a host callback, if needed. If we're already performing work,
     // wait until the next time we yield.
+    // 从逻辑上看，这里就是判断当前是否正处于流程，即 performWorkUntilDeadline 是否正处于一个递归的执行状态中中，如果不在的话，就开启这个调度
     if (!isHostCallbackScheduled && !isPerformingWork) {
       isHostCallbackScheduled = true;
       requestHostCallback(flushWork);
