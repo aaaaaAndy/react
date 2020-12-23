@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>react源码学习</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+  <meta name="description" content="Description">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1.0, shrink-to-fit=no, viewport-fit=cover">
+<!--  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">-->
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+<!--  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify/lib/themes/buble.css">-->
+<!--  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify/lib/themes/dark.css">-->
+<!--  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify/lib/themes/pure.css">-->
+<!--  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify/lib/themes/dolphin.css">-->
+  <style>
+    :root{
+      --docsify-example-panels-left-panel-width : 50%;
+      --docsify-example-panels-right-panel-width : 50%;
+    }
+    img[src*="#width-full"] {
+      width: 100%;
+    }
+    .docsify-example-panel {
+      position: relative;
+      /*top: -20px;*/
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    window.$docsify = {
+      el: '#app',
+      name: 'React源码解析',
+      basepath: 'https://github.com/aaaaaAndy/aaaaaAndy.github.io/tree/master/react',
+      coverpage: true,
+      loadNavbar: true,
+      loadSidebar: true,
+      relativePath: true,
+      mergeNavbar: true,
+      subMaxLevel: 4,
+      topMargin: 90,
+    }
+  </script>
+  <!-- Docsify v4 -->
+  <script src="//cdn.jsdelivr.net/npm/docsify@4"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-example-panels@1"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/zoom-image.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>
+</body>
+</html>
